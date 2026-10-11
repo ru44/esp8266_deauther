@@ -7,6 +7,8 @@
 #include <ESP8266WiFi.h> // WiFi.macAddress() + ESP.* for the System Info screen
 #include <time.h>        // configTime()/localtime_r() for the NTP clock sync
 
+extern bool writeFile(String path, String& buf); // defined in functions.h (wardriver CSV)
+
 // ===== adjustable ===== //
 void DisplayUI::configInit() {
     // initialize display
@@ -476,6 +478,22 @@ void DisplayUI::setup() {
             scan.start(SCAN_MODE_APS, 0, SCAN_MODE_OFF, 0, true, wifi_channel);
             mode = DISPLAY_MODE::SIGNALMETER;
         });
+        addMenuNode(&toolsMenu, D_DEAUTHDET, [this]() {   // deauth detector / alarm
+            ddPrev = 0;
+            ddHit  = 0;
+            scan.start(SCAN_MODE_SNIFFER, 0, SCAN_MODE_OFF, 0, true, wifi_channel);
+            mode = DISPLAY_MODE::DEAUTHDET;
+        });
+        addMenuNode(&toolsMenu, D_WARDRIVE, [this]() {    // wardriver / AP logger
+            wdSaved = 0;
+            scan.start(SCAN_MODE_APS, 0, SCAN_MODE_OFF, 0, true, wifi_channel);
+            mode = DISPLAY_MODE::WARDRIVE;
+        });
+        addMenuNode(&toolsMenu, D_CLIENTS, [this]() {     // probe sniffer / clients
+            staIdx = 0;
+            scan.start(SCAN_MODE_STATIONS, 0, SCAN_MODE_OFF, 0, true, wifi_channel);
+            mode = DISPLAY_MODE::CLIENTS;
+        });
         addMenuNode(&toolsMenu, D_SYSINFO, [this]() {    // system info
             mode = DISPLAY_MODE::SYSINFO;
         });
@@ -577,6 +595,18 @@ void DisplayUI::setupButtons() {
                 setTime(clockHour, clockMinute + 1, clockSecond);
             } else if (mode == DISPLAY_MODE::SIGNALMETER) {   // previous AP
                 if (rssiIdx > 0) rssiIdx--;
+            } else if (mode == DISPLAY_MODE::CLIENTS) {        // scroll up
+                if (staIdx > 0) staIdx--;
+            } else if (mode == DISPLAY_MODE::WARDRIVE) {       // save CSV to flash
+                String csv = "SSID,BSSID,ch,RSSI,vendor\n";
+                int c = accesspoints.count();
+                for (int i = 0; i < c; i++) {
+                    csv += accesspoints.getSSID(i) + "," + accesspoints.getMacStr(i) + "," +
+                           String(accesspoints.getCh(i)) + "," + String(accesspoints.getRSSI(i)) + "," +
+                           accesspoints.getVendorStr(i) + "\n";
+                }
+                writeFile("/wardrive.csv", csv);
+                wdSaved = millis();
             }
         }
     });
@@ -612,6 +642,8 @@ void DisplayUI::setupButtons() {
                 setTime(clockHour, clockMinute - 1, clockSecond);
             } else if (mode == DISPLAY_MODE::SIGNALMETER) {   // next AP
                 rssiIdx++; // clamped in drawSignal()
+            } else if (mode == DISPLAY_MODE::CLIENTS) {        // scroll down
+                staIdx++;  // clamped in drawClients()
             }
         }
     });
@@ -683,7 +715,17 @@ void DisplayUI::setupButtons() {
 
                 case DISPLAY_MODE::CHANNELS:
                 case DISPLAY_MODE::SIGNALMETER:
+                case DISPLAY_MODE::WARDRIVE:
+                case DISPLAY_MODE::CLIENTS:
                     scan.stop();
+                    mode = DISPLAY_MODE::MENU;
+                    break;
+
+                case DISPLAY_MODE::DEAUTHDET:
+                    scan.stop();
+#ifdef HIGHLIGHT_LED
+                    digitalWrite(HIGHLIGHT_LED, highlightLED); // restore LED
+#endif
                     mode = DISPLAY_MODE::MENU;
                     break;
             }
@@ -797,6 +839,15 @@ void DisplayUI::draw(bool force) {
                 break;
             case DISPLAY_MODE::SIGNALMETER:
                 drawSignal();
+                break;
+            case DISPLAY_MODE::DEAUTHDET:
+                drawDeauthDet();
+                break;
+            case DISPLAY_MODE::WARDRIVE:
+                drawWardrive();
+                break;
+            case DISPLAY_MODE::CLIENTS:
+                drawClients();
                 break;
             case DISPLAY_MODE::RESETTING:
                 drawResetting();
@@ -1140,6 +1191,73 @@ void DisplayUI::drawSignal() {
     int w = (pct * 124) / 60;
     display.drawRect(2, 46, 124, 12);
     if (w > 0) display.fillRect(2, 46, w, 12);
+}
+
+// ===== Deauth detector / alarm ===== //
+// Sniffs management frames (channel-hopping) and watches scan.deauths. When new
+// deauth/disassoc frames appear it raises an alert (blinking text + LED) for a
+// few seconds. A defensive "someone is attacking Wi-Fi near me" radar. A = exit.
+void DisplayUI::drawDeauthDet() {
+    uint16_t d = scan.deauths;
+    if (d > ddPrev) { ddHit = millis(); ddPrev = d; }
+    bool alert = (ddHit != 0) && (millis() - ddHit < 3000);
+    bool blink = (millis() / 200) % 2;
+
+    drawString(0, "Deauth alarm");
+    drawString(1, leftRight("ch", getChannel(), maxLen));
+    drawString(2, leftRight("deauths", String(d), maxLen));
+    drawString(3, leftRight("pkts/s", String(scan.getPacketRate()), maxLen));
+
+    if (alert) {
+        if (blink) drawString(4, center(String(F("!! ATTACK !!")), maxLen));
+#ifdef HIGHLIGHT_LED
+        digitalWrite(HIGHLIGHT_LED, blink ? HIGH : LOW);
+#endif
+    } else {
+        drawString(4, center(String(F("- quiet -")), maxLen));
+#ifdef HIGHLIGHT_LED
+        digitalWrite(HIGHLIGHT_LED, highlightLED);
+#endif
+    }
+}
+
+// ===== Wardriver / AP logger ===== //
+// Continuously scans APs (channel-hopping). UP saves everything seen so far to
+// /wardrive.csv on flash (browse via the web UI or `print /wardrive.csv`). A = exit.
+void DisplayUI::drawWardrive() {
+    drawString(0, "Wardriver");
+    drawString(1, leftRight("APs seen", String(accesspoints.count()), maxLen));
+    drawString(2, leftRight("ch", getChannel(), maxLen));
+    drawString(3, leftRight("pkts/s", String(scan.getPacketRate()), maxLen));
+
+    if (millis() - wdSaved < 2000) drawString(4, center(String(F("saved CSV!")), maxLen));
+    else drawString(4, "UP=save  A=exit");
+}
+
+// ===== Probe sniffer / clients ===== //
+// Lists client devices the watch detects (station scan) and the network each is
+// on ("(searching)" if none). UP/DOWN scroll, A = exit.
+void DisplayUI::drawClients() {
+    int cnt = stations.count();
+
+    drawString(0, leftRight("Clients", String(cnt), maxLen));
+
+    if (cnt == 0) {
+        drawString(2, "sniffing...");
+        return;
+    }
+
+    if (staIdx >= cnt) staIdx = cnt - 1;
+    if (staIdx < 0) staIdx = 0;
+
+    for (int r = 0; (r < 2) && ((staIdx + r) < cnt); r++) {
+        int    i  = staIdx + r;
+        String ap = stations.getAPStr(i);
+        if (ap.length() == 0) ap = "(searching)";
+        if (ap.length() > 15) ap = ap.substring(0, 15);
+        drawString(1 + r * 2, stations.getMacStr(i));
+        drawString(2 + r * 2, " ->" + ap);
+    }
 }
 
 void DisplayUI::clearMenu(Menu* menu) {

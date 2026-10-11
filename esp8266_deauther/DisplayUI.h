@@ -83,6 +83,9 @@ enum class DISPLAY_MODE { OFF,
                           WIFICONNECT,
                           CHANNELS,
                           SIGNALMETER,
+                          DEAUTHDET,
+                          WARDRIVE,
+                          CLIENTS,
                           RESETTING };
 
 class DisplayUI {
@@ -193,6 +196,9 @@ class DisplayUI {
         void drawWifi();
         void drawChannels();
         void drawSignal();
+        void drawDeauthDet();
+        void drawWardrive();
+        void drawClients();
         void clearMenu(Menu* menu);
 
         // menu functions
@@ -225,6 +231,10 @@ class DisplayUI {
 
         // ===== tools state ===== //
         int      rssiIdx = 0;       // selected AP in the signal meter
+        uint16_t ddPrev  = 0;       // deauth-detector: last seen deauth count
+        uint32_t ddHit   = 0;       // deauth-detector: millis() of last new deauth
+        uint32_t wdSaved = 0;       // wardriver: millis() of last CSV save
+        int      staIdx  = 0;       // probe sniffer: scroll offset in client list
 
 #ifdef RTC_DS3231
         DS3231 clock;
