@@ -4,6 +4,8 @@
 
 #include "settings.h"
 
+#include <ESP8266WiFi.h> // WiFi.macAddress() + ESP.* for the System Info screen
+
 // ===== adjustable ===== //
 void DisplayUI::configInit() {
     // initialize display
@@ -88,6 +90,16 @@ void DisplayUI::setup() {
             mode = DISPLAY_MODE::PACKETMONITOR;
         });
         addMenuNode(&mainMenu, D_CLOCK, &clockMenu); // CLOCK
+
+        addMenuNode(&mainMenu, D_SYSINFO, [this]() { // SYSTEM INFO
+            mode = DISPLAY_MODE::SYSINFO;
+        });
+
+        addMenuNode(&mainMenu, D_FUN, [this]() {     // FUN MODE (fake-hacker screensaver)
+            funFrame = 0;
+            for (uint8_t i = 0; i < sizeof(funDrops); i++) funDrops[i] = random(6);
+            mode = DISPLAY_MODE::FUNMODE;
+        });
 
 #ifdef HIGHLIGHT_LED
         addMenuNode(&mainMenu, D_LED, [this]() {     // LED
@@ -615,6 +627,13 @@ void DisplayUI::setupButtons() {
                     display.setFont(DejaVu_Sans_Mono_12);
                     display.setTextAlignment(TEXT_ALIGN_LEFT);
                     break;
+
+                case DISPLAY_MODE::SYSINFO:
+                case DISPLAY_MODE::FUNMODE:
+                    mode = DISPLAY_MODE::MENU;
+                    display.setFont(DejaVu_Sans_Mono_12);
+                    display.setTextAlignment(TEXT_ALIGN_LEFT);
+                    break;
             }
         }
     });
@@ -712,6 +731,12 @@ void DisplayUI::draw(bool force) {
             case DISPLAY_MODE::CLOCK_DISPLAY:
                 drawClock();
                 break;
+            case DISPLAY_MODE::SYSINFO:
+                drawSysInfo();
+                break;
+            case DISPLAY_MODE::FUNMODE:
+                drawFun();
+                break;
             case DISPLAY_MODE::RESETTING:
                 drawResetting();
                 break;
@@ -805,10 +830,13 @@ void DisplayUI::drawPacketMonitor() {
 }
 
 void DisplayUI::drawIntro() {
+    String ver = String(DEAUTHER_VERSION);
+    if (strlen(BUILD_TAG) > 0) ver += " " + String(BUILD_TAG);
+
     drawString(0, center(str(D_INTRO_0), maxLen));
     drawString(1, center(str(D_INTRO_1), maxLen));
     drawString(2, center(str(D_INTRO_2), maxLen));
-    drawString(3, center(DEAUTHER_VERSION, maxLen));
+    drawString(3, center(ver, maxLen));
     if (scan.isScanning()) {
         if (currentTime - startTime >= screenIntroTime+4500) drawString(4, left(str(D_SCANNING_3), maxLen));
         else if (currentTime - startTime >= screenIntroTime+3000) drawString(4, left(str(D_SCANNING_2), maxLen));
@@ -829,6 +857,87 @@ void DisplayUI::drawClock() {
 
 void DisplayUI::drawResetting() {
     drawString(2, center(str(D_RESETTING), maxLen));
+}
+
+// ===== System Info screen ===== //
+// Read-only status page: firmware version + build tag, MAC, free RAM, uptime.
+// Press the A button to return to the menu.
+void DisplayUI::drawSysInfo() {
+    uint32_t up = millis() / 1000;
+    char upbuf[10];
+
+    snprintf(upbuf, sizeof(upbuf), "%02u:%02u:%02u",
+             (unsigned)(up / 3600), (unsigned)((up / 60) % 60), (unsigned)(up % 60));
+
+    String ver = String(DEAUTHER_VERSION);
+    if (strlen(BUILD_TAG) > 0) ver += " " + String(BUILD_TAG);
+
+    drawString(0, center(String(F("SYSTEM INFO")), maxLen));
+    drawString(1, leftRight(String(F("Ver")), ver, maxLen));
+    drawString(2, WiFi.macAddress());
+    drawString(3, leftRight(String(F("RAM")), String(ESP.getFreeHeap()) + "B", maxLen));
+    drawString(4, leftRight(String(F("Up")), String(upbuf), maxLen));
+}
+
+// ===== Fun mode: fake-hacker "Hollywood" screensaver ===== //
+// Pure eye-candy. It performs NO scanning/attacks and touches no network - every
+// line is theatrical nonsense generated locally. Cycles: matrix rain -> fake
+// console log -> "ACCESS GRANTED". Press the A button to return to the menu.
+void DisplayUI::drawFun() {
+    static const char charset[] = "01$#%&*+<>?/|=\\ABCDEF0123456789";
+    static const uint8_t csLen  = sizeof(charset) - 1;
+    static String logLines[5];
+
+    funFrame++;
+
+    // keep a scrolling fake-console buffer alive (shown during the console phase)
+    if (funFrame % 4 == 0) {
+        for (int i = 0; i < 4; i++) logLines[i] = logLines[i + 1];
+
+        String line;
+        switch (random(10)) {
+            case 0:  line = "> nmap 10.0.0." + String(random(1, 255)); break;
+            case 1:  line = "port " + String(random(1, 65535)) + " open"; break;
+            case 2:  line = "brute " + String(random(100)) + "%"; break;
+            case 3:  line = "handshake ok"; break;
+            case 4:  line = "inject 0x" + String(random(0xFFFF), HEX); break;
+            case 5:  line = "node " + String(random(256)) + " up"; break;
+            case 6:  line = "WPA2 cracked"; break;
+            case 7:  line = "root@tgt:~#"; break;
+            case 8:  line = "fw bypass.."; break;
+            default: line = "payload sent"; break;
+        }
+        logLines[4] = line;
+    }
+
+    uint32_t t = funFrame % 110;
+
+    if (t < 40) {
+        // --- phase 1: matrix rain ---
+        int cols = screenWidth / 6;
+
+        for (int c = 0; c < cols && c < (int)sizeof(funDrops); c++) {
+            int x = c * 6;
+
+            for (int tail = 0; tail < 3; tail++) {
+                int row = (int)funDrops[c] - tail;
+                if (row < 0) row += 6;
+                char ch[2] = { charset[random(csLen)], 0 };
+                drawString(x, row * 11, String(ch));
+            }
+            if ((funFrame + c) % 2 == 0) funDrops[c] = (funDrops[c] + 1) % 6;
+        }
+    } else if (t < 90) {
+        // --- phase 2: fake hacking console ---
+        for (int i = 0; i < 5; i++) drawString(i, logLines[i]);
+    } else {
+        // --- phase 3: "ACCESS GRANTED" (blinking) ---
+        if ((funFrame / 3) % 2 == 0) {
+            display.drawRect(6, 14, screenWidth - 12, 36);
+            drawString(1, center(String(F("ACCESS")), maxLen));
+            drawString(3, center(String(F("GRANTED")), maxLen));
+        }
+    }
 }
 
 void DisplayUI::clearMenu(Menu* menu) {

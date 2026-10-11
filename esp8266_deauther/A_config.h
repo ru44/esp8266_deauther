@@ -314,6 +314,26 @@
   #define BUTTON_DOWN 13
   #define BUTTON_A 14
 
+// ===== Custom enhancements (DSTIKE_DEAUTHER_WATCH only) ===== //
+// These override the #ifndef fallback defaults further down this file.
+// Guarded with #ifdef so the shared DSTIKE_DEAUTHER_MINI target stays stock.
+// Tweak the values below to taste, then rebuild with: tools/build.sh
+#ifdef DSTIKE_DEAUTHER_WATCH
+  #undef DISPLAY_TEXT
+  #define DISPLAY_TEXT "ru44 // deauther"   // boot-screen subtitle (2nd line of splash)
+
+  #define DISPLAY_TIMEOUT 60                 // idle seconds before OLED sleeps (stock 600) -> battery
+  #define LED_MODE_BRIGHTNESS 40             // status-LED brightness 0-255 (stock 10 = very dim)
+
+  // Per-mode status-LED colors as R, G, B (0-255). Edit freely.
+  #define LED_MODE_IDLE   0, 255, 0          // idle   = green
+  #define LED_MODE_SCAN   0, 255, 255        // scan   = cyan  (stock was blue 0,0,255)
+  #define LED_MODE_ATTACK 255, 0, 0          // attack = red
+
+  // Short tag shown on the boot splash next to the version number.
+  #define BUILD_TAG "ru44"
+#endif // DSTIKE_DEAUTHER_WATCH
+
 #elif defined(DSTIKE_DEAUTHER_WATCH_V2) || defined(DSTIKE_DEAUTHER_MINI_EVO)
 
 // ===== LED ===== //
@@ -534,6 +554,10 @@
 #ifndef DISPLAY_TEXT
   #define DISPLAY_TEXT ""
 #endif /* ifndef DISPLAY_TEXT */
+
+#ifndef BUILD_TAG
+  #define BUILD_TAG ""
+#endif /* ifndef BUILD_TAG */
 
 #ifndef FLIP_DIPLAY
   #define FLIP_DIPLAY false

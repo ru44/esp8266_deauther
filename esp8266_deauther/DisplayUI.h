@@ -78,6 +78,8 @@ enum class DISPLAY_MODE { OFF,
                           INTRO,
                           CLOCK,
                           CLOCK_DISPLAY,
+                          SYSINFO,
+                          FUNMODE,
                           RESETTING };
 
 class DisplayUI {
@@ -181,6 +183,8 @@ class DisplayUI {
         void drawPacketMonitor();
         void drawIntro();
         void drawResetting();
+        void drawSysInfo();
+        void drawFun();
         void clearMenu(Menu* menu);
 
         // menu functions
@@ -203,6 +207,10 @@ class DisplayUI {
         int clockSecond = 0;
 
         uint32_t clockTime = 0;
+
+        // ===== fun / fake-hacker mode state ===== //
+        uint32_t funFrame = 0;      // frame counter (advances ~10x/sec)
+        uint8_t  funDrops[22];      // per-column head position for the matrix rain
 
 #ifdef RTC_DS3231
         DS3231 clock;
