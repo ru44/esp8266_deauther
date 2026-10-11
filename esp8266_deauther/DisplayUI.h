@@ -133,6 +133,7 @@ class DisplayUI {
         void update(bool force = false);
         void on();
         void off();
+        bool syncNTP(); // briefly join Wi-Fi (credentials.h) and set the clock from NTP
 
     private:
         int16_t selectedID    = 0; // i.e. access point ID to draw the apMenu
@@ -201,7 +202,6 @@ class DisplayUI {
         // fake clock
         void drawClock();
         void setTime(int h, int m, int s);
-        bool syncNTP(); // briefly join Wi-Fi (credentials.h) and set the clock from NTP
 
         int clockHour   = 6;
         int clockMinute = 0;
@@ -209,9 +209,10 @@ class DisplayUI {
 
         uint32_t clockTime = 0;
 
-        // ===== fun / fake-hacker mode state ===== //
-        uint32_t funFrame = 0;      // frame counter (advances ~10x/sec)
-        uint8_t  funDrops[22];      // per-column head position for the matrix rain
+        // ===== fun / fake-hacker "show" mode state ===== //
+        uint32_t funFrame   = 0;    // frame counter (advances ~10x/sec)
+        String   funTarget;         // SSID picked from the real scan for the show
+        uint8_t  funTargetCh = 0;   // its channel
 
 #ifdef RTC_DS3231
         DS3231 clock;

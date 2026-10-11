@@ -96,9 +96,10 @@ void DisplayUI::setup() {
             mode = DISPLAY_MODE::SYSINFO;
         });
 
-        addMenuNode(&mainMenu, D_FUN, [this]() {     // FUN MODE (fake-hacker screensaver)
-            funFrame = 0;
-            for (uint8_t i = 0; i < sizeof(funDrops); i++) funDrops[i] = random(6);
+        addMenuNode(&mainMenu, D_FUN, [this]() {     // FUN MODE (cinematic fake-hacker show)
+            funFrame  = 0;
+            funTarget = "";
+            scan.start(SCAN_MODE_APS, 0, SCAN_MODE_OFF, 0, true, wifi_channel); // real AP scan for authenticity
             mode = DISPLAY_MODE::FUNMODE;
         });
 
@@ -636,7 +637,13 @@ void DisplayUI::setupButtons() {
                     break;
 
                 case DISPLAY_MODE::SYSINFO:
+                    mode = DISPLAY_MODE::MENU;
+                    display.setFont(DejaVu_Sans_Mono_12);
+                    display.setTextAlignment(TEXT_ALIGN_LEFT);
+                    break;
+
                 case DISPLAY_MODE::FUNMODE:
+                    scan.stop(); // stop the show's AP scan
                     mode = DISPLAY_MODE::MENU;
                     display.setFont(DejaVu_Sans_Mono_12);
                     display.setTextAlignment(TEXT_ALIGN_LEFT);
@@ -893,64 +900,103 @@ void DisplayUI::drawSysInfo() {
 #endif
 }
 
-// ===== Fun mode: fake-hacker "Hollywood" screensaver ===== //
-// Pure eye-candy. It performs NO scanning/attacks and touches no network - every
-// line is theatrical nonsense generated locally. Cycles: matrix rain -> fake
-// console log -> "ACCESS GRANTED". Press the A button to return to the menu.
+// ===== Fun mode: scripted fake-hacker "show" ===== //
+// A cinematic sequence that LOOKS like a real attack but isn't: it scans and
+// lists REAL nearby Wi-Fi (passive, for authenticity), then plays theatrical
+// "wifite / deauth / access" phases. The deauth phase is a VISUAL SIMULATION -
+// it transmits nothing. (Real, deliberate attacks live in the ATTACK menu.)
+// Press the A button to exit. Phases (frames @ ~10 fps, 320-frame loop):
+//   boot -> scan -> handshake -> deauth(10s sim) -> clients -> exploit -> root
 void DisplayUI::drawFun() {
-    static const char charset[] = "01$#%&*+<>?/|=\\ABCDEF0123456789";
-    static const uint8_t csLen  = sizeof(charset) - 1;
-    static String logLines[5];
-
     funFrame++;
 
-    // keep a scrolling fake-console buffer alive (shown during the console phase)
-    if (funFrame % 4 == 0) {
-        for (int i = 0; i < 4; i++) logLines[i] = logLines[i + 1];
+    const uint32_t CYCLE = 320;
+    uint32_t t   = funFrame % CYCLE;
+    String   cur = ((funFrame / 4) % 2) ? String("_") : String(" "); // blinking cursor
 
-        String line;
-        switch (random(10)) {
-            case 0:  line = "> nmap 10.0.0." + String(random(1, 255)); break;
-            case 1:  line = "port " + String(random(1, 65535)) + " open"; break;
-            case 2:  line = "brute " + String(random(100)) + "%"; break;
-            case 3:  line = "handshake ok"; break;
-            case 4:  line = "inject 0x" + String(random(0xFFFF), HEX); break;
-            case 5:  line = "node " + String(random(256)) + " up"; break;
-            case 6:  line = "WPA2 cracked"; break;
-            case 7:  line = "root@tgt:~#"; break;
-            case 8:  line = "fw bypass.."; break;
-            default: line = "payload sent"; break;
+    // lock a real target once, at the scan -> handshake transition
+    if (t == 80) {
+        if (accesspoints.count() > 0) {
+            funTarget   = accesspoints.getSSID(0);
+            funTargetCh = accesspoints.getCh(0);
+        } else {
+            funTarget   = "FreeWiFi";
+            funTargetCh = 6;
         }
-        logLines[4] = line;
+        if (funTarget.length() == 0) funTarget = "<hidden>";
     }
 
-    uint32_t t = funFrame % 110;
+    String tgt = funTarget.length() ? funTarget : String("target");
+    if (tgt.length() > 12) tgt = tgt.substring(0, 12);
 
-    if (t < 40) {
-        // --- phase 1: matrix rain ---
-        int cols = screenWidth / 6;
-
-        for (int c = 0; c < cols && c < (int)sizeof(funDrops); c++) {
-            int x = c * 6;
-
-            for (int tail = 0; tail < 3; tail++) {
-                int row = (int)funDrops[c] - tail;
-                if (row < 0) row += 6;
-                char ch[2] = { charset[random(csLen)], 0 };
-                drawString(x, row * 11, String(ch));
-            }
-            if ((funFrame + c) % 2 == 0) funDrops[c] = (funDrops[c] + 1) % 6;
+    if (t < 20) {
+        // boot: typed command
+        String cmd = "wifite --kill";
+        int    n   = (int)((t * cmd.length()) / 18);
+        if (n > (int)cmd.length()) n = cmd.length();
+        drawString(0, "root@kali:~#");
+        drawString(1, "# " + cmd.substring(0, n) + cur);
+    } else if (t < 80) {
+        // scan real Wi-Fi
+        drawString(0, "scanning WLANs" + String("...").substring(0, (t / 5) % 4));
+        int cnt = accesspoints.count();
+        drawString(1, leftRight("found APs", String(cnt), maxLen));
+        int shown = 0;
+        for (int i = cnt - 1; (i >= 0) && (shown < 3); i--, shown++) {
+            String s = accesspoints.getSSID(i);
+            if (s.length() == 0) s = "<hidden>";
+            if (s.length() > 11) s = s.substring(0, 11);
+            drawString(2 + shown, "ch" + String(accesspoints.getCh(i)) + " " + s);
         }
-    } else if (t < 90) {
-        // --- phase 2: fake hacking console ---
-        for (int i = 0; i < 5; i++) drawString(i, logLines[i]);
+    } else if (t < 110) {
+        // wifite-style handshake capture
+        int pct = (int)(((t - 80) * 100) / 30);
+        drawString(0, "wifite: " + tgt);
+        drawString(1, "ch " + String(funTargetCh));
+        drawString(2, leftRight("WPA handshake", String(pct) + "%", maxLen));
+        drawString(3, "capturing EAPOL" + cur);
+    } else if (t < 210) {
+        // deauth - SIMULATION ONLY (no frames transmitted), 10 seconds
+        uint32_t p    = t - 110;             // 0..99
+        int      left = 10 - (int)(p / 10);  // 10..0
+        int      pps  = 160 + (int)random(80);
+        int      bars = (int)(p / 6);
+        if (bars > 16) bars = 16;
+        String bar = "[";
+        for (int i = 0; i < 16; i++) bar += (i < bars) ? '#' : ' ';
+        bar += "]";
+        drawString(0, "deauth > " + tgt);
+        drawString(1, leftRight("ch " + String(funTargetCh), String(left) + "s", maxLen));
+        drawString(2, leftRight("pkts/s", String(pps), maxLen));
+        drawString(3, bar);
+        drawString(4, "clients dropping" + cur);
+    } else if (t < 250) {
+        // listing devices
+        uint32_t p    = t - 210;
+        int      rows = 1 + (int)(p / 10);
+        if (rows > 4) rows = 4;
+        drawString(0, "clients on " + tgt);
+        for (int i = 0; i < rows; i++) {
+            int  s = i * 37 + (int)(funFrame / 50);
+            char mac[18];
+            snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+                     0x1A, 0x2B, (s * 7) & 0xFF, (s * 13) & 0xFF, (s * 29) & 0xFF, (s * 53) & 0xFF);
+            drawString(1 + i, String(mac));
+        }
+    } else if (t < 280) {
+        // gaining access
+        int pct = (int)(((t - 250) * 100) / 30);
+        drawString(0, "exploit > " + tgt);
+        drawString(1, leftRight("privesc", String(pct) + "%", maxLen));
+        drawString(2, "CVE-2024-" + String(1000 + (int)(funFrame % 9000)));
+        drawString(3, "bypassing auth" + cur);
     } else {
-        // --- phase 3: "ACCESS GRANTED" (blinking) ---
-        if ((funFrame / 3) % 2 == 0) {
-            display.drawRect(6, 14, screenWidth - 12, 36);
-            drawString(1, center(String(F("ACCESS")), maxLen));
-            drawString(3, center(String(F("GRANTED")), maxLen));
-        }
+        // root terminal
+        drawString(0, "root@" + tgt.substring(0, 8) + ":~#");
+        drawString(1, "id");
+        drawString(2, "uid=0(root)");
+        drawString(3, "[+] root access");
+        drawString(4, "    granted" + cur);
     }
 }
 
@@ -1078,24 +1124,42 @@ bool DisplayUI::syncNTP() {
     drawString(2, center(String(F("NTP: connecting")), maxLen));
     display.display();
 
+    Serial.printf("NTP: connecting to \"%s\"...\n", WIFI_STA_SSID);
+
     WiFiMode_t prevMode = WiFi.getMode();
+    WiFi.persistent(false);
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_STA_SSID, WIFI_STA_PASS);
 
-    uint32_t t0 = millis();
-    while ((WiFi.status() != WL_CONNECTED) && (millis() - t0 < 8000)) delay(100);
+    uint32_t t0      = millis();
+    bool     retried = false;
+    while ((WiFi.status() != WL_CONNECTED) && (millis() - t0 < 15000)) {
+        delay(200);
+        if (!retried && (millis() - t0 > 7000)) { // one re-kick for flaky association
+            WiFi.begin(WIFI_STA_SSID, WIFI_STA_PASS);
+            retried = true;
+        }
+    }
 
     bool ok = false;
 
+    Serial.printf("NTP: WiFi.status=%d (3=connected)\n", WiFi.status());
+
     if (WiFi.status() == WL_CONNECTED) {
+        Serial.print("NTP: got IP ");
+        Serial.print(WiFi.localIP());
+        Serial.printf(" RSSI %d dBm\n", WiFi.RSSI());
+
         configTime(NTP_OFFSET_SEC, 0, "pool.ntp.org", "time.nist.gov");
 
         time_t   now = 0;
         uint32_t t1  = millis();
-        while ((now < 100000) && (millis() - t1 < 8000)) {
+        while ((now < 100000) && (millis() - t1 < 10000)) {
             now = time(nullptr);
-            delay(100);
+            delay(200);
         }
+
+        Serial.printf("NTP: epoch=%ld\n", (long)now);
 
         if (now > 100000) {
             struct tm tm;
@@ -1103,6 +1167,38 @@ bool DisplayUI::syncNTP() {
             setTime(tm.tm_hour, tm.tm_min, tm.tm_sec);
             clockTime = currentTime; // realign the software seconds counter
             ok = true;
+            Serial.printf("NTP: time set to %02d:%02d:%02d\n", tm.tm_hour, tm.tm_min, tm.tm_sec);
+        }
+
+        // Fallback: many managed networks block UDP/123 but allow HTTP. Read the
+        // server's "Date:" header (GMT) and apply the local offset.
+        if (!ok) {
+            Serial.println("NTP: SNTP blocked, trying HTTP Date header...");
+            WiFiClient client;
+            if (client.connect("www.google.com", 80)) {
+                client.print(F("HEAD / HTTP/1.1\r\nHost: www.google.com\r\nConnection: close\r\n\r\n"));
+                uint32_t t2 = millis();
+                while (client.connected() && (millis() - t2 < 6000)) {
+                    String line = client.readStringUntil('\n');
+                    // "Date: Sat, 11 Oct 2026 09:45:00 GMT"
+                    if ((line.length() >= 31) &&
+                        (line.startsWith("Date:") || line.startsWith("date:"))) {
+                        int h = line.substring(23, 25).toInt() + (NTP_OFFSET_SEC / 3600);
+                        int m = line.substring(26, 28).toInt();
+                        int s = line.substring(29, 31).toInt();
+                        setTime(h, m, s);
+                        clockTime = currentTime;
+                        ok = true;
+                        Serial.printf("NTP(HTTP): GMT %s -> local %02d:%02d:%02d\n",
+                                      line.substring(23, 31).c_str(), clockHour, clockMinute, clockSecond);
+                        break;
+                    }
+                    if (line == "\r") break; // end of headers
+                }
+                client.stop();
+            } else {
+                Serial.println("NTP: HTTP connect failed");
+            }
         }
     }
 

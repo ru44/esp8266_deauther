@@ -895,6 +895,13 @@ void CLI::runCommand(String input) {
         ESP.reset();
     }
 
+    // ===== NTP ===== //
+    // ntp - briefly join the configured Wi-Fi and set the clock from NTP
+    // (syncNTP() prints "NTP sync: OK/FAILED" to serial itself)
+    else if (eqlsCMD(0, CLI_NTP)) {
+        displayUI.syncNTP();
+    }
+
     // ===== FORMAT ==== //
     // format
     else if (eqlsCMD(0, CLI_FORMAT)) {

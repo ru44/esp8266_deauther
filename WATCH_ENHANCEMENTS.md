@@ -14,8 +14,9 @@ All board-specific tweaks are guarded by `#ifdef DSTIKE_DEAUTHER_WATCH` in
 | Boot splash | Subtitle `ru44 // deauther`; version line shows a build tag (`BUILD_TAG`) |
 | Battery | `DISPLAY_TIMEOUT` 600 → 60 s (screen sleeps sooner) |
 | LED | Brightness 10 → 40; per-mode colors (idle green / scan cyan / attack red) |
-| Display: System Info | New menu page: firmware version, MAC, free RAM, uptime |
-| Display: Fun mode | Fake-hacker "Hollywood" screensaver (Matrix rain → bogus console → ACCESS GRANTED). Cosmetic only — performs no scanning/attacks and touches no network. |
+| Display: System Info | New menu page: firmware version, MAC, free RAM, uptime, battery (raw ADC + volts) |
+| Display: Fun mode | Scripted fake-hacker "show": scans + lists REAL nearby Wi-Fi, then theatrical wifite → deauth → client-list → exploit → root-terminal phases. The deauth phase is a VISUAL SIMULATION only — it transmits nothing. Real attacks stay in the ATTACK menu. |
+| Clock: NTP | `NTP SYNC` menu item and `ntp` serial command: briefly join Wi-Fi (credentials.h) and set the clock from NTP, with an HTTP `Date:` header fallback for networks that block UDP/123. Won't work behind a captive portal. |
 
 New display screens live in `esp8266_deauther/DisplayUI.{h,cpp}`
 (`drawSysInfo()`, `drawFun()`), wired into the menu, `draw()` dispatch, and the

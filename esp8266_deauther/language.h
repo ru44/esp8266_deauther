@@ -96,6 +96,7 @@ const char CLI_ADD[] PROGMEM = "add";                          // add
 const char CLI_DESELECT[] PROGMEM = "deselect";                // deselect
 const char CLI_CLEAR[] PROGMEM = "clear";                      // clear
 const char CLI_SYSINFO[] PROGMEM = "sysinfo";                  // sysinfo
+const char CLI_NTP[] PROGMEM = "ntp";                          // ntp
 const char CLI_RESET[] PROGMEM = "reset";                      // reset
 const char CLI_ON[] PROGMEM = "on";                            // on
 const char CLI_OFF[] PROGMEM = "off";                          // off
