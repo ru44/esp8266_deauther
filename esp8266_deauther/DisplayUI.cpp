@@ -103,6 +103,16 @@ void DisplayUI::setup() {
             mode = DISPLAY_MODE::FUNMODE;
         });
 
+        addMenuNode(&mainMenu, D_WIFI, [this]() {     // WIFI connect (to credentials.h network)
+            if (strlen(WIFI_STA_SSID) > 0) {
+                WiFi.persistent(false);
+                WiFi.mode(WIFI_STA);
+                WiFi.begin(WIFI_STA_SSID, WIFI_STA_PASS);
+            }
+            wifiTime = millis();
+            mode     = DISPLAY_MODE::WIFICONNECT;
+        });
+
 #ifdef HIGHLIGHT_LED
         addMenuNode(&mainMenu, D_LED, [this]() {     // LED
             highlightLED = !highlightLED;
@@ -648,6 +658,13 @@ void DisplayUI::setupButtons() {
                     display.setFont(DejaVu_Sans_Mono_12);
                     display.setTextAlignment(TEXT_ALIGN_LEFT);
                     break;
+
+                case DISPLAY_MODE::WIFICONNECT:
+                    WiFi.disconnect(true); // leave the network on exit
+                    mode = DISPLAY_MODE::MENU;
+                    display.setFont(DejaVu_Sans_Mono_12);
+                    display.setTextAlignment(TEXT_ALIGN_LEFT);
+                    break;
             }
         }
     });
@@ -750,6 +767,9 @@ void DisplayUI::draw(bool force) {
                 break;
             case DISPLAY_MODE::FUNMODE:
                 drawFun();
+                break;
+            case DISPLAY_MODE::WIFICONNECT:
+                drawWifi();
                 break;
             case DISPLAY_MODE::RESETTING:
                 drawResetting();
@@ -888,7 +908,7 @@ void DisplayUI::drawSysInfo() {
 
     drawString(0, leftRight(String(F("Ver")), ver, maxLen));
     drawString(1, WiFi.macAddress());
-    drawString(2, leftRight(String(F("RAM")), String(ESP.getFreeHeap()) + "B", maxLen));
+    drawString(2, leftRight(String(F("RAM")), String(ESP.getFreeHeap() / 1024.0, 1) + "K", maxLen));
     drawString(3, leftRight(String(F("Up")), String(upbuf), maxLen));
 
 #ifdef BATTERY_MONITOR
@@ -910,8 +930,9 @@ void DisplayUI::drawSysInfo() {
 void DisplayUI::drawFun() {
     funFrame++;
 
-    const uint32_t CYCLE = 320;
-    uint32_t t   = funFrame % CYCLE;
+    // Plays once then HOLDS on the final root-terminal frame (no looping).
+    const uint32_t END = 320;
+    uint32_t t   = (funFrame < END) ? funFrame : (END - 1);
     String   cur = ((funFrame / 4) % 2) ? String("_") : String(" "); // blinking cursor
 
     // lock a real target once, at the scan -> handshake transition
@@ -997,6 +1018,37 @@ void DisplayUI::drawFun() {
         drawString(2, "uid=0(root)");
         drawString(3, "[+] root access");
         drawString(4, "    granted" + cur);
+    }
+}
+
+// ===== Wi-Fi connect screen ===== //
+// Joins the credentials.h network as a client and shows live status. The menu
+// kicked off WiFi.begin(); here we just poll it (non-blocking). Exit = button A.
+void DisplayUI::drawWifi() {
+    drawString(0, "WiFi connect");
+
+    if (strlen(WIFI_STA_SSID) == 0) {
+        drawString(2, "no network set");
+        drawString(3, "edit credentials.h");
+        return;
+    }
+
+    String ssid = String(WIFI_STA_SSID);
+    if (ssid.length() > 16) ssid = ssid.substring(0, 16);
+    drawString(1, ssid);
+
+    wl_status_t st = WiFi.status();
+
+    if (st == WL_CONNECTED) {
+        drawString(2, "connected");
+        drawString(3, WiFi.localIP().toString());
+        drawString(4, leftRight("RSSI", String(WiFi.RSSI()) + "dBm", maxLen));
+    } else if (millis() - wifiTime > 16000) {
+        drawString(2, "failed");
+        drawString(3, "status " + String((int)st));
+        drawString(4, "A = back");
+    } else {
+        drawString(2, "connecting" + String("...").substring(0, (millis() / 400) % 4));
     }
 }
 

@@ -80,6 +80,7 @@ enum class DISPLAY_MODE { OFF,
                           CLOCK_DISPLAY,
                           SYSINFO,
                           FUNMODE,
+                          WIFICONNECT,
                           RESETTING };
 
 class DisplayUI {
@@ -186,6 +187,7 @@ class DisplayUI {
         void drawResetting();
         void drawSysInfo();
         void drawFun();
+        void drawWifi();
         void clearMenu(Menu* menu);
 
         // menu functions
@@ -213,6 +215,8 @@ class DisplayUI {
         uint32_t funFrame   = 0;    // frame counter (advances ~10x/sec)
         String   funTarget;         // SSID picked from the real scan for the show
         uint8_t  funTargetCh = 0;   // its channel
+
+        uint32_t wifiTime = 0;      // when the WIFI-connect screen started trying
 
 #ifdef RTC_DS3231
         DS3231 clock;
