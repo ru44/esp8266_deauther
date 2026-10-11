@@ -375,9 +375,6 @@ const char D_WIFI[] PROGMEM = "WIFI";
 const char D_TOOLS[] PROGMEM = "TOOLS";
 const char D_CHANALYZER[] PROGMEM = "CH ANALYZER";
 const char D_SIGNAL[] PROGMEM = "SIGNAL METER";
-const char D_STOPWATCH[] PROGMEM = "STOPWATCH";
-const char D_TIMER[] PROGMEM = "TIMER";
-const char D_SNAKE[] PROGMEM = "SNAKE";
 
 // SCAN MENU
 const char D_SCAN_APST[] PROGMEM = "SCAN AP + ST";
