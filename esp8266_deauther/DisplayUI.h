@@ -201,6 +201,7 @@ class DisplayUI {
         // fake clock
         void drawClock();
         void setTime(int h, int m, int s);
+        bool syncNTP(); // briefly join Wi-Fi (credentials.h) and set the clock from NTP
 
         int clockHour   = 6;
         int clockMinute = 0;

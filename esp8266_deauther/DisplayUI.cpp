@@ -5,6 +5,7 @@
 #include "settings.h"
 
 #include <ESP8266WiFi.h> // WiFi.macAddress() + ESP.* for the System Info screen
+#include <time.h>        // configTime()/localtime_r() for the NTP clock sync
 
 // ===== adjustable ===== //
 void DisplayUI::configInit() {
@@ -465,6 +466,12 @@ void DisplayUI::setup() {
             display.setFont(ArialMT_Plain_24);
             display.setTextAlignment(TEXT_ALIGN_CENTER);
         });
+        addMenuNode(&clockMenu, D_NTP_SYNC, [this]() { // NTP SYNC (real time over Wi-Fi)
+            syncNTP();
+            mode = DISPLAY_MODE::CLOCK_DISPLAY;
+            display.setFont(ArialMT_Plain_24);
+            display.setTextAlignment(TEXT_ALIGN_CENTER);
+        });
     });
 
     // ===================== //
@@ -872,11 +879,18 @@ void DisplayUI::drawSysInfo() {
     String ver = String(DEAUTHER_VERSION);
     if (strlen(BUILD_TAG) > 0) ver += " " + String(BUILD_TAG);
 
-    drawString(0, center(String(F("SYSTEM INFO")), maxLen));
-    drawString(1, leftRight(String(F("Ver")), ver, maxLen));
-    drawString(2, WiFi.macAddress());
-    drawString(3, leftRight(String(F("RAM")), String(ESP.getFreeHeap()) + "B", maxLen));
-    drawString(4, leftRight(String(F("Up")), String(upbuf), maxLen));
+    drawString(0, leftRight(String(F("Ver")), ver, maxLen));
+    drawString(1, WiFi.macAddress());
+    drawString(2, leftRight(String(F("RAM")), String(ESP.getFreeHeap()) + "B", maxLen));
+    drawString(3, leftRight(String(F("Up")), String(upbuf), maxLen));
+
+#ifdef BATTERY_MONITOR
+    int   raw   = analogRead(A0);
+    float volts = raw * (BATTERY_ADC_SCALE);
+    drawString(4, leftRight(String(F("Bat")), String(raw) + " " + String(volts, 1) + "V", maxLen));
+#else
+    drawString(4, leftRight(String(F("Bat")), String(F("n/a")), maxLen));
+#endif
 }
 
 // ===== Fun mode: fake-hacker "Hollywood" screensaver ===== //
@@ -1047,4 +1061,54 @@ void DisplayUI::setTime(int h, int m, int s) {
     clock.setMinute(clockMinute);
     clock.setSecond(clockSecond);
 #endif // ifdef RTC_DS3231
+}
+
+// Briefly join the Wi-Fi network from credentials.h, fetch time over NTP, and
+// seed the (software) clock with real local time. User-triggered from the clock
+// menu; it blocks for up to ~16s and temporarily takes the radio off whatever
+// it was doing, so don't run it mid-attack. Credentials stay local (git-ignored).
+bool DisplayUI::syncNTP() {
+    if (strlen(WIFI_STA_SSID) == 0) {
+        Serial.println("NTP: no Wi-Fi configured (credentials.h)");
+        return false;
+    }
+
+    // we're about to block, so show a status line now
+    display.clear();
+    drawString(2, center(String(F("NTP: connecting")), maxLen));
+    display.display();
+
+    WiFiMode_t prevMode = WiFi.getMode();
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WIFI_STA_SSID, WIFI_STA_PASS);
+
+    uint32_t t0 = millis();
+    while ((WiFi.status() != WL_CONNECTED) && (millis() - t0 < 8000)) delay(100);
+
+    bool ok = false;
+
+    if (WiFi.status() == WL_CONNECTED) {
+        configTime(NTP_OFFSET_SEC, 0, "pool.ntp.org", "time.nist.gov");
+
+        time_t   now = 0;
+        uint32_t t1  = millis();
+        while ((now < 100000) && (millis() - t1 < 8000)) {
+            now = time(nullptr);
+            delay(100);
+        }
+
+        if (now > 100000) {
+            struct tm tm;
+            localtime_r(&now, &tm);
+            setTime(tm.tm_hour, tm.tm_min, tm.tm_sec);
+            clockTime = currentTime; // realign the software seconds counter
+            ok = true;
+        }
+    }
+
+    WiFi.disconnect(true);
+    WiFi.mode(prevMode);
+
+    Serial.printf("NTP sync: %s\n", ok ? "OK" : "FAILED");
+    return ok;
 }

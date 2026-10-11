@@ -369,6 +369,7 @@ const char D_CLOCK_DISPLAY[] PROGMEM = "CLOCK DISPLAY";
 const char D_CLOCK_SET[] PROGMEM = "SET CLOCK";
 const char D_SYSINFO[] PROGMEM = "SYSTEM INFO";
 const char D_FUN[] PROGMEM = "FUN MODE";
+const char D_NTP_SYNC[] PROGMEM = "NTP SYNC";
 
 // SCAN MENU
 const char D_SCAN_APST[] PROGMEM = "SCAN AP + ST";

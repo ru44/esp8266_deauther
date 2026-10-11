@@ -6,6 +6,27 @@
 #define DEBUG_PORT Serial
 #define DEBUG_BAUD 115200
 
+// ===== Optional local Wi-Fi credentials for the NTP clock =====
+// credentials.h is git-ignored (never pushed). It may define:
+//   #define WIFI_STA_SSID  "..."   // network the watch joins to fetch time
+//   #define WIFI_STA_PASS  "..."   // its password (8-63 chars, or "" if open)
+//   #define NTP_OFFSET_SEC 10800   // local UTC offset in seconds
+// It is pulled in only when the build defines HAVE_CREDENTIALS (tools/build.sh
+// adds that automatically when the file exists). Without it - e.g. a fresh
+// clone of the public repo - NTP sync is simply disabled.
+#ifdef HAVE_CREDENTIALS
+  #include "credentials.h"
+#endif
+#ifndef WIFI_STA_SSID
+  #define WIFI_STA_SSID ""
+#endif
+#ifndef WIFI_STA_PASS
+  #define WIFI_STA_PASS ""
+#endif
+#ifndef NTP_OFFSET_SEC
+  #define NTP_OFFSET_SEC 0
+#endif
+
 #define DEFAULT_ESP8266
 
 // #define NODEMCU
@@ -332,6 +353,13 @@
 
   // Short tag shown on the boot splash next to the version number.
   #define BUILD_TAG "ru44"
+
+  // Battery readout on the System Info screen. Reads the ESP8266 ADC (A0/TOUT).
+  // NOTE: only meaningful if the battery is wired to A0 through a divider on
+  // your watch - otherwise A0 floats and the reading is noise. The screen shows
+  // the raw ADC value too, so you can calibrate BATTERY_ADC_SCALE (volts/count).
+  #define BATTERY_MONITOR
+  #define BATTERY_ADC_SCALE 0.00411f   // 0..1023 -> ~0..4.2V (adjust after measuring)
 #endif // DSTIKE_DEAUTHER_WATCH
 
 #elif defined(DSTIKE_DEAUTHER_WATCH_V2) || defined(DSTIKE_DEAUTHER_MINI_EVO)
