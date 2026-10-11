@@ -17,6 +17,7 @@ All board-specific tweaks are guarded by `#ifdef DSTIKE_DEAUTHER_WATCH` in
 | Display: System Info | New menu page: firmware version, MAC, free RAM, uptime, battery (raw ADC + volts) |
 | Display: Fun mode | Scripted fake-hacker "show": scans + lists REAL nearby Wi-Fi, then theatrical wifite → deauth → client-list → exploit → root-terminal phases. The deauth phase is a VISUAL SIMULATION only — it transmits nothing. Real attacks stay in the ATTACK menu. |
 | Clock: NTP | `NTP SYNC` menu item and `ntp` serial command: briefly join Wi-Fi (credentials.h) and set the clock from NTP, with an HTTP `Date:` header fallback for networks that block UDP/123. Won't work behind a captive portal. |
+| TOOLS submenu | New `TOOLS` menu grouping the extras: **CH ANALYZER** (AP-count-per-channel bar graph + best channel), **SIGNAL METER** (pick an AP, live RSSI + bar), **STOPWATCH** (UP start/stop, DOWN reset), **TIMER** (UP +1min, DOWN start/pause, LED flash on finish), **SNAKE** (UP/DOWN turn), plus SYSTEM INFO / WIFI / FUN MODE. |
 
 New display screens live in `esp8266_deauther/DisplayUI.{h,cpp}`
 (`drawSysInfo()`, `drawFun()`), wired into the menu, `draw()` dispatch, and the

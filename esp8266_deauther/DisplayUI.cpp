@@ -91,27 +91,7 @@ void DisplayUI::setup() {
             mode = DISPLAY_MODE::PACKETMONITOR;
         });
         addMenuNode(&mainMenu, D_CLOCK, &clockMenu); // CLOCK
-
-        addMenuNode(&mainMenu, D_SYSINFO, [this]() { // SYSTEM INFO
-            mode = DISPLAY_MODE::SYSINFO;
-        });
-
-        addMenuNode(&mainMenu, D_FUN, [this]() {     // FUN MODE (cinematic fake-hacker show)
-            funFrame  = 0;
-            funTarget = "";
-            scan.start(SCAN_MODE_APS, 0, SCAN_MODE_OFF, 0, true, wifi_channel); // real AP scan for authenticity
-            mode = DISPLAY_MODE::FUNMODE;
-        });
-
-        addMenuNode(&mainMenu, D_WIFI, [this]() {     // WIFI connect (to credentials.h network)
-            if (strlen(WIFI_STA_SSID) > 0) {
-                WiFi.persistent(false);
-                WiFi.mode(WIFI_STA);
-                WiFi.begin(WIFI_STA_SSID, WIFI_STA_PASS);
-            }
-            wifiTime = millis();
-            mode     = DISPLAY_MODE::WIFICONNECT;
-        });
+        addMenuNode(&mainMenu, D_TOOLS, &toolsMenu); // TOOLS (extras submenu)
 
 #ifdef HIGHLIGHT_LED
         addMenuNode(&mainMenu, D_LED, [this]() {     // LED
@@ -485,6 +465,52 @@ void DisplayUI::setup() {
         });
     });
 
+    // TOOLS MENU (extras)
+    createMenu(&toolsMenu, &mainMenu, [this]() {
+        addMenuNode(&toolsMenu, D_CHANALYZER, [this]() { // Wi-Fi channel analyzer
+            scan.start(SCAN_MODE_APS, 0, SCAN_MODE_OFF, 0, true, wifi_channel);
+            mode = DISPLAY_MODE::CHANNELS;
+        });
+        addMenuNode(&toolsMenu, D_SIGNAL, [this]() {     // signal (RSSI) meter
+            rssiIdx = 0;
+            scan.start(SCAN_MODE_APS, 0, SCAN_MODE_OFF, 0, true, wifi_channel);
+            mode = DISPLAY_MODE::SIGNALMETER;
+        });
+        addMenuNode(&toolsMenu, D_STOPWATCH, [this]() {  // stopwatch
+            swRunning = false;
+            swAccum   = 0;
+            swStart   = millis();
+            mode      = DISPLAY_MODE::STOPWATCH;
+        });
+        addMenuNode(&toolsMenu, D_TIMER, [this]() {      // countdown timer
+            tmrRunning = false;
+            tmrRemain  = 60000;
+            mode       = DISPLAY_MODE::COUNTDOWN;
+        });
+        addMenuNode(&toolsMenu, D_SNAKE, [this]() {      // snake game
+            gameReset();
+            mode = DISPLAY_MODE::SNAKE;
+        });
+        addMenuNode(&toolsMenu, D_SYSINFO, [this]() {    // system info
+            mode = DISPLAY_MODE::SYSINFO;
+        });
+        addMenuNode(&toolsMenu, D_WIFI, [this]() {       // Wi-Fi connect
+            if (strlen(WIFI_STA_SSID) > 0) {
+                WiFi.persistent(false);
+                WiFi.mode(WIFI_STA);
+                WiFi.begin(WIFI_STA_SSID, WIFI_STA_PASS);
+            }
+            wifiTime = millis();
+            mode     = DISPLAY_MODE::WIFICONNECT;
+        });
+        addMenuNode(&toolsMenu, D_FUN, [this]() {        // fun fake-hacker show
+            funFrame  = 0;
+            funTarget = "";
+            scan.start(SCAN_MODE_APS, 0, SCAN_MODE_OFF, 0, true, wifi_channel);
+            mode = DISPLAY_MODE::FUNMODE;
+        });
+    });
+
     // ===================== //
 
     // set current menu to main menu
@@ -564,6 +590,16 @@ void DisplayUI::setupButtons() {
                 scan.setChannel(wifi_channel + 1);
             } else if (mode == DISPLAY_MODE::CLOCK) {         // when in clock, change time
                 setTime(clockHour, clockMinute + 1, clockSecond);
+            } else if (mode == DISPLAY_MODE::SIGNALMETER) {   // previous AP
+                if (rssiIdx > 0) rssiIdx--;
+            } else if (mode == DISPLAY_MODE::STOPWATCH) {     // start / stop
+                if (swRunning) { swAccum += millis() - swStart; swRunning = false; }
+                else { swStart = millis(); swRunning = true; }
+            } else if (mode == DISPLAY_MODE::COUNTDOWN) {     // +1 min (when stopped)
+                if (!tmrRunning) { tmrRemain += 60000; if (tmrRemain > 600000) tmrRemain = 60000; }
+            } else if (mode == DISPLAY_MODE::SNAKE) {         // turn left / restart
+                if (snDead) gameReset();
+                else if (!snTurned) { int8_t o = snDx; snDx = snDy; snDy = -o; snTurned = true; }
             }
         }
     });
@@ -597,6 +633,16 @@ void DisplayUI::setupButtons() {
                 scan.setChannel(wifi_channel - 1);
             } else if (mode == DISPLAY_MODE::CLOCK) {         // when in clock, change time
                 setTime(clockHour, clockMinute - 1, clockSecond);
+            } else if (mode == DISPLAY_MODE::SIGNALMETER) {   // next AP
+                rssiIdx++; // clamped in drawSignal()
+            } else if (mode == DISPLAY_MODE::STOPWATCH) {     // reset
+                swAccum = 0; swRunning = false; swStart = millis();
+            } else if (mode == DISPLAY_MODE::COUNTDOWN) {     // start / pause
+                if (tmrRunning) { tmrRemain = (tmrEnd > millis()) ? (tmrEnd - millis()) : 0; tmrRunning = false; }
+                else { if (tmrRemain == 0) tmrRemain = 60000; tmrEnd = millis() + tmrRemain; tmrRunning = true; }
+            } else if (mode == DISPLAY_MODE::SNAKE) {         // turn right / restart
+                if (snDead) gameReset();
+                else if (!snTurned) { int8_t o = snDx; snDx = -snDy; snDy = o; snTurned = true; }
             }
         }
     });
@@ -664,6 +710,18 @@ void DisplayUI::setupButtons() {
                     mode = DISPLAY_MODE::MENU;
                     display.setFont(DejaVu_Sans_Mono_12);
                     display.setTextAlignment(TEXT_ALIGN_LEFT);
+                    break;
+
+                case DISPLAY_MODE::CHANNELS:
+                case DISPLAY_MODE::SIGNALMETER:
+                    scan.stop();
+                    mode = DISPLAY_MODE::MENU;
+                    break;
+
+                case DISPLAY_MODE::STOPWATCH:
+                case DISPLAY_MODE::COUNTDOWN:
+                case DISPLAY_MODE::SNAKE:
+                    mode = DISPLAY_MODE::MENU;
                     break;
             }
         }
@@ -770,6 +828,21 @@ void DisplayUI::draw(bool force) {
                 break;
             case DISPLAY_MODE::WIFICONNECT:
                 drawWifi();
+                break;
+            case DISPLAY_MODE::CHANNELS:
+                drawChannels();
+                break;
+            case DISPLAY_MODE::SIGNALMETER:
+                drawSignal();
+                break;
+            case DISPLAY_MODE::STOPWATCH:
+                drawStopwatch();
+                break;
+            case DISPLAY_MODE::COUNTDOWN:
+                drawTimer();
+                break;
+            case DISPLAY_MODE::SNAKE:
+                drawGame();
                 break;
             case DISPLAY_MODE::RESETTING:
                 drawResetting();
@@ -1050,6 +1123,185 @@ void DisplayUI::drawWifi() {
     } else {
         drawString(2, "connecting" + String("...").substring(0, (millis() / 400) % 4));
     }
+}
+
+// ===== Wi-Fi channel analyzer ===== //
+// Bar graph of how many APs sit on each channel (1-13). Pick the least-busy one
+// for your own router. Needs the AP scan (started on entry). A = exit.
+void DisplayUI::drawChannels() {
+    int chan[15] = { 0 };
+    int cnt      = accesspoints.count();
+
+    for (int i = 0; i < cnt; i++) {
+        uint8_t c = accesspoints.getCh(i);
+        if ((c >= 1) && (c <= 14)) chan[c]++;
+    }
+
+    int maxC = 1;
+    int best = 1;
+    for (int c = 1; c <= 13; c++) {
+        if (chan[c] > maxC) maxC = chan[c];
+        if (chan[c] < chan[best]) best = c;
+    }
+
+    drawString(0, leftRight("APs " + String(cnt), "best ch" + String(best), maxLen));
+
+    const int baseY = 62;
+    const int top   = 16;
+    for (int c = 1; c <= 13; c++) {
+        int x = 3 + (c - 1) * 9;
+        int h = (chan[c] == 0) ? 0 : (2 + (chan[c] * (baseY - top)) / maxC);
+        if (h > baseY - top) h = baseY - top;
+        if (h > 0) display.fillRect(x, baseY - h, 6, h);
+    }
+}
+
+// ===== Signal (RSSI) meter ===== //
+// UP/DOWN pick an AP, big live dBm + bar. Walk around to find dead zones. A = exit.
+void DisplayUI::drawSignal() {
+    int cnt = accesspoints.count();
+
+    drawString(0, "Signal meter");
+
+    if (cnt == 0) {
+        drawString(2, "scanning...");
+        return;
+    }
+
+    if (rssiIdx >= cnt) rssiIdx = cnt - 1;
+    if (rssiIdx < 0) rssiIdx = 0;
+
+    String s = accesspoints.getSSID(rssiIdx);
+    if (s.length() == 0) s = "<hidden>";
+    if (s.length() > 12) s = s.substring(0, 12);
+
+    int rssi = accesspoints.getRSSI(rssiIdx);
+
+    drawString(1, leftRight(s, String(rssiIdx + 1) + "/" + String(cnt), maxLen));
+    drawString(2, leftRight("ch " + String(accesspoints.getCh(rssiIdx)), String(rssi) + "dBm", maxLen));
+
+    int pct = rssi + 90; // -90..-30 -> 0..60
+    if (pct < 0) pct = 0;
+    if (pct > 60) pct = 60;
+    int w = (pct * 124) / 60;
+    display.drawRect(2, 46, 124, 12);
+    if (w > 0) display.fillRect(2, 46, w, 12);
+}
+
+// ===== Stopwatch ===== //  UP = start/stop, DOWN = reset, A = exit.
+void DisplayUI::drawStopwatch() {
+    uint32_t ms    = swRunning ? (millis() - swStart + swAccum) : swAccum;
+    uint32_t tenth = ms / 100;
+    char     buf[12];
+    snprintf(buf, sizeof(buf), "%02u:%02u.%u",
+             (unsigned)(tenth / 600), (unsigned)((tenth / 10) % 60), (unsigned)(tenth % 10));
+
+    display.setFont(ArialMT_Plain_24);
+    display.setTextAlignment(TEXT_ALIGN_CENTER);
+    display.drawString(64, 16, buf);
+    display.setFont(DejaVu_Sans_Mono_12);
+    display.setTextAlignment(TEXT_ALIGN_LEFT);
+
+    drawString(4, swRunning ? "UP=stop DOWN=rst" : "UP=start DOWN=rst");
+}
+
+// ===== Countdown timer ===== //  UP = +1min, DOWN = start/pause, A = exit.
+void DisplayUI::drawTimer() {
+    long remain;
+    bool expired = false;
+
+    if (tmrRunning) {
+        remain = (long)tmrEnd - (long)millis();
+        if (remain <= 0) { remain = 0; expired = true; }
+    } else {
+        remain = (long)tmrRemain;
+    }
+
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%02ld:%02ld", (remain / 1000) / 60, (remain / 1000) % 60);
+
+    bool blink = (millis() / 250) % 2;
+
+    display.setFont(ArialMT_Plain_24);
+    display.setTextAlignment(TEXT_ALIGN_CENTER);
+    if (!expired || blink) display.drawString(64, 14, buf);
+    display.setFont(DejaVu_Sans_Mono_12);
+    display.setTextAlignment(TEXT_ALIGN_LEFT);
+
+    if (expired) {
+        drawString(4, "DONE  A=back");
+#ifdef HIGHLIGHT_LED
+        digitalWrite(HIGHLIGHT_LED, blink ? HIGH : LOW); // flash the LED
+#endif
+    } else {
+        drawString(4, tmrRunning ? "DOWN=pause" : "UP=+1m DOWN=start");
+    }
+}
+
+// ===== Snake ===== //  UP/DOWN = turn, A = exit. Pure fun.
+void DisplayUI::gameSpawnFood() {
+    for (int tries = 0; tries < 200; tries++) {
+        uint8_t fx = random(GW);
+        uint8_t fy = random(GH);
+        bool    on = false;
+        for (int i = 0; i < snLen; i++) {
+            if ((snX[i] == fx) && (snY[i] == fy)) { on = true; break; }
+        }
+        if (!on) { foodX = fx; foodY = fy; return; }
+    }
+    foodX = 0; foodY = 0;
+}
+
+void DisplayUI::gameReset() {
+    randomSeed(micros());
+    snLen    = 3;
+    snDx     = 1; snDy = 0;
+    snX[0]   = GW / 2;     snY[0] = GH / 2;
+    snX[1]   = snX[0] - 1; snY[1] = snY[0];
+    snX[2]   = snX[0] - 2; snY[2] = snY[0];
+    snScore  = 0;
+    snDead   = false;
+    snTurned = false;
+    snTick   = millis();
+    gameSpawnFood();
+}
+
+void DisplayUI::drawGame() {
+    if (!snDead && (millis() - snTick >= 160)) {
+        snTick   = millis();
+        snTurned = false;
+
+        int nx = snX[0] + snDx;
+        int ny = snY[0] + snDy;
+
+        if ((nx < 0) || (nx >= GW) || (ny < 0) || (ny >= GH)) {
+            snDead = true;
+        } else {
+            for (int i = 0; i < snLen; i++) {
+                if ((snX[i] == nx) && (snY[i] == ny)) { snDead = true; break; }
+            }
+            if (!snDead) {
+                bool grew   = (nx == foodX) && (ny == foodY);
+                int  newLen = grew ? snLen + 1 : snLen;
+                if (newLen > SNAKE_MAX) newLen = SNAKE_MAX;
+                for (int i = newLen - 1; i > 0; i--) { snX[i] = snX[i - 1]; snY[i] = snY[i - 1]; }
+                snX[0] = nx; snY[0] = ny;
+                snLen  = newLen;
+                if (grew) { snScore++; gameSpawnFood(); }
+            }
+        }
+    }
+
+    if (snDead) {
+        drawString(1, center(String(F("GAME OVER")), maxLen));
+        drawString(2, center("score " + String(snScore), maxLen));
+        drawString(4, center(String(F("UP/DOWN = retry")), maxLen));
+        return;
+    }
+
+    const int cell = 4;
+    display.fillRect(foodX * cell, foodY * cell, cell - 1, cell - 1);
+    for (int i = 0; i < snLen; i++) display.fillRect(snX[i] * cell, snY[i] * cell, cell - 1, cell - 1);
 }
 
 void DisplayUI::clearMenu(Menu* menu) {

@@ -81,6 +81,11 @@ enum class DISPLAY_MODE { OFF,
                           SYSINFO,
                           FUNMODE,
                           WIFICONNECT,
+                          CHANNELS,
+                          SIGNALMETER,
+                          STOPWATCH,
+                          COUNTDOWN,
+                          SNAKE,
                           RESETTING };
 
 class DisplayUI {
@@ -162,6 +167,7 @@ class DisplayUI {
         Menu showMenu;
         Menu attackMenu;
         Menu clockMenu;
+        Menu toolsMenu;
 
         Menu apListMenu;
         Menu stationListMenu;
@@ -188,6 +194,13 @@ class DisplayUI {
         void drawSysInfo();
         void drawFun();
         void drawWifi();
+        void drawChannels();
+        void drawSignal();
+        void drawStopwatch();
+        void drawTimer();
+        void drawGame();
+        void gameReset();
+        void gameSpawnFood();
         void clearMenu(Menu* menu);
 
         // menu functions
@@ -217,6 +230,28 @@ class DisplayUI {
         uint8_t  funTargetCh = 0;   // its channel
 
         uint32_t wifiTime = 0;      // when the WIFI-connect screen started trying
+
+        // ===== tools state ===== //
+        int      rssiIdx = 0;       // selected AP in the signal meter
+
+        bool     swRunning = false; // stopwatch
+        uint32_t swStart   = 0;     // millis() when (re)started running
+        uint32_t swAccum   = 0;     // accumulated ms while paused
+
+        bool     tmrRunning = false; // countdown timer
+        uint32_t tmrRemain  = 60000; // ms remaining when stopped/paused
+        uint32_t tmrEnd     = 0;     // millis() target when running
+
+        // snake game (grid cells)
+        static const uint8_t GW = 32, GH = 15, SNAKE_MAX = 120;
+        uint8_t  snX[SNAKE_MAX], snY[SNAKE_MAX];
+        int      snLen = 0;
+        int8_t   snDx = 1, snDy = 0;
+        uint8_t  foodX = 0, foodY = 0;
+        int      snScore = 0;
+        bool     snDead = false;
+        bool     snTurned = false;
+        uint32_t snTick = 0;
 
 #ifdef RTC_DS3231
         DS3231 clock;
